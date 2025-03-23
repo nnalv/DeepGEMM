@@ -38,7 +38,7 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                 uint32_t shape_m,
                 const __grid_constant__ CUtensorMap tensor_map_a,
                 const __grid_constant__ CUtensorMap tensor_map_b,
-                const __grid_constant__ CUtensorMap tensor_map_scales_a,
+                // const __grid_constant__ CUtensorMap tensor_map_scales_a,
                 const __grid_constant__ CUtensorMap tensor_map_d) {
 #if (defined(__CUDA_ARCH__) and (__CUDA_ARCH__ >= 900)) or defined(__CLION_IDE__)
     // Scaling checks
@@ -46,13 +46,15 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     DG_STATIC_ASSERT(ceil_div(BLOCK_N, BLOCK_K) == 1, "Too much B scales in a single block");
 
     // Types
-    using WGMMA = typename FP8MMASelector<BLOCK_N>::type;
+    // using WGMMA = typename FP8MMASelector<BLOCK_N>::type;
+    using WGMMA = typename BF16MMASelector<BLOCK_N>::type;
     using Barrier = cutlass::arch::ClusterTransactionBarrier;
 
     // Shared memory
     static constexpr int kMustUseUniformedScaleB = (BLOCK_K % BLOCK_N == 0);
     static constexpr uint32_t SMEM_D_SIZE = BLOCK_M * BLOCK_N * sizeof(__nv_bfloat16);
-    static constexpr uint32_t SMEM_A_SIZE_PER_STAGE = BLOCK_M * BLOCK_K * sizeof(__nv_fp8_e4m3);
+    // static constexpr uint32_t SMEM_A_SIZE_PER_STAGE = BLOCK_M * BLOCK_K * sizeof(__nv_fp8_e4m3);
+    static constexpr uint32_t SMEM_A_SIZE_PER_STAGE = BLOCK_M * BLOCK_K * sizeof(__nv_bfloat16);
     static constexpr uint32_t SMEM_B_SIZE_PER_STAGE = BLOCK_N * BLOCK_K * sizeof(__nv_fp8_e4m3);
     static constexpr uint32_t SMEM_SCALES_A_SIZE_PER_STAGE = BLOCK_M * sizeof(float);
     static constexpr uint32_t SHAPE_K_SCALES = ceil_div(SHAPE_K, BLOCK_K);
@@ -70,7 +72,7 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     if (threadIdx.x == kNumMathThreads) {
         cute::prefetch_tma_descriptor(reinterpret_cast<cute::TmaDescriptor const*>(&tensor_map_a));
         cute::prefetch_tma_descriptor(reinterpret_cast<cute::TmaDescriptor const*>(&tensor_map_b));
-        cute::prefetch_tma_descriptor(reinterpret_cast<cute::TmaDescriptor const*>(&tensor_map_scales_a));
+        // cute::prefetch_tma_descriptor(reinterpret_cast<cute::TmaDescriptor const*>(&tensor_map_scales_a));
         cute::prefetch_tma_descriptor(reinterpret_cast<cute::TmaDescriptor const*>(&tensor_map_d));
     }
     __syncwarp();
@@ -81,9 +83,10 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
 
     // Data on shared memory
     auto smem_d = reinterpret_cast<__nv_bfloat16*>(smem_buffer);
-    __nv_fp8_e4m3* smem_a[kNumStages];
+    // __nv_fp8_e4m3* smem_a[kNumStages];
+    __nv_bfloat16* smem_a[kNumStages];
     __nv_fp8_e4m3* smem_b[kNumStages];
-    float* smem_scales_a[kNumStages];
+    // float* smem_scales_a[kNumStages];
     float* smem_scales_b;
 
     // TMA Barrier for both divisible and non-divisible cases
@@ -93,11 +96,13 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     // Fill shared memory pointers
     #pragma unroll
     for (int i = 0; i < kNumStages; ++ i) {
-        smem_a[i] = reinterpret_cast<__nv_fp8_e4m3*>(smem_buffer + SMEM_D_SIZE + i * SMEM_A_SIZE_PER_STAGE);
+        // smem_a[i] = reinterpret_cast<__nv_fp8_e4m3*>(smem_buffer + SMEM_D_SIZE + i * SMEM_A_SIZE_PER_STAGE);
+        smem_a[i] = reinterpret_cast<__nv_bfloat16*>(smem_buffer + SMEM_D_SIZE + i * SMEM_A_SIZE_PER_STAGE);
         smem_b[i] = reinterpret_cast<__nv_fp8_e4m3*>(smem_buffer + SMEM_D_SIZE + kNumStages * SMEM_A_SIZE_PER_STAGE + i * SMEM_B_SIZE_PER_STAGE);
-        smem_scales_a[i] = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE) + i * SMEM_SCALES_A_SIZE_PER_STAGE);
+        // smem_scales_a[i] = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE) + i * SMEM_SCALES_A_SIZE_PER_STAGE);
     }
-    smem_scales_b = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE));
+    // smem_scales_b = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE));
+    smem_scales_b = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE));
 
     // Fill barriers
     auto barrier_start_ptr = reinterpret_cast<Barrier*>(reinterpret_cast<uint8_t*>(smem_scales_b) + SMEM_SCALES_B_SIZE);
@@ -173,14 +178,15 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                         int k_idx = k_iter * kFullKOfAllStages + s * BLOCK_K;
                         tma_copy<kNumTMAMulticast>(&tensor_map_a, reinterpret_cast<uint64_t*>(&full_barrier),
                                                    smem_a[s], k_idx, scheduler.get_global_idx(shape_m, BLOCK_M, m_block_idx));
-                        tma_copy<kNumTMAMulticast>(&tensor_map_scales_a, reinterpret_cast<uint64_t*>(&full_barrier),
-                                                   smem_scales_a[s], m_block_idx * BLOCK_M,
-                                                   scheduler.get_global_idx(SHAPE_K_SCALES, 1, k_idx / BLOCK_K));
+                        // tma_copy<kNumTMAMulticast>(&tensor_map_scales_a, reinterpret_cast<uint64_t*>(&full_barrier),
+                        //                            smem_scales_a[s], m_block_idx * BLOCK_M,
+                        //                            scheduler.get_global_idx(SHAPE_K_SCALES, 1, k_idx / BLOCK_K));
 
                         // Issue TMA B without broadcasting
                         tma_copy(&tensor_map_b, reinterpret_cast<uint64_t*>(&full_barrier),
                                  smem_b[s], k_idx, scheduler.get_global_idx<false>(SHAPE_N, BLOCK_N, n_block_idx, m_block_idx));
-                        full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE);
+                        // full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE);
+                        full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE);
                     }
 
                     // Wait unaligned cases
@@ -205,7 +211,7 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
 
         // NOTES: use `__shfl_sync` to encourage NVCC to use unified registers
         const auto math_wg_idx = __shfl_sync(0xffffffff, threadIdx.x / kNumMathThreadsPerGroup, 0);
-        const auto r_0 = warp_idx * 16 + lane_idx / 4, r_1 = r_0 + 8;
+        // const auto r_0 = warp_idx * 16 + lane_idx / 4, r_1 = r_0 + 8;
 
         // Persistently schedule over blocks
         while (scheduler.get_next_block(m_block_idx, n_block_idx)) {
@@ -260,7 +266,7 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
 
                     // Read A scales
                     // NOTES: all shared memory read must be prior to `warpgroup_arrive` to avoid next scheduled block polluting the results
-                    auto scale_a_0 = ld_shared(smem_scales_a[s] + r_0), scale_a_1 = ld_shared(smem_scales_a[s] + r_1);
+                    // auto scale_a_0 = ld_shared(smem_scales_a[s] + r_0), scale_a_1 = ld_shared(smem_scales_a[s] + r_1);
 
                     // Commit WGMMA instructions
                     #pragma unroll
@@ -270,7 +276,11 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                     #pragma unroll
                     for (int k = 0; k < BLOCK_K / WGMMA::K; ++ k) {
                         auto desc_a = make_smem_desc(smem_a[s] + math_wg_idx * WGMMA::M * BLOCK_K + k * WGMMA::K, 1);
-                        auto desc_b = make_smem_desc(smem_b[s] + k * WGMMA::K, 1);
+                        // auto desc_b = make_smem_desc(smem_b[s] + k * WGMMA::K, 1);
+
+                        __nv_bfloat16* smem_b_bf16 = reinterpret_cast<__nv_bfloat16*>(smem_b[s]);
+                        auto desc_b = make_smem_desc(smem_b_bf16 + k * WGMMA::K, 1);
+                        
                         WGMMA::wgmma(desc_a, desc_b, accum, k);
                     }
                     warpgroup_commit_batch();
@@ -284,10 +294,14 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
 
                     // Promote with scales
                     // NOTES: making it as predicates is very important for performance, comparing to two loops
-                    float scale_0_0 = scale_a_0 * scale_b_0, scale_1_0 = scale_a_1 * scale_b_0;
+                    // float scale_0_0 = scale_a_0 * scale_b_0, scale_1_0 = scale_a_1 * scale_b_0;
+                    // float scale_0_1, scale_1_1;
+                    // if constexpr (not kMustUseUniformedScaleB)
+                    //     scale_0_1 = scale_a_0 * scale_b_1, scale_1_1 = scale_a_1 * scale_b_1;
+                    float scale_0_0 = scale_b_0, scale_1_0 = scale_b_0;
                     float scale_0_1, scale_1_1;
                     if constexpr (not kMustUseUniformedScaleB)
-                        scale_0_1 = scale_a_0 * scale_b_1, scale_1_1 = scale_a_1 * scale_b_1;
+                        scale_0_1 =  scale_b_1, scale_1_1 = scale_b_1;
                     #pragma unroll
                     for (int i = 0; i < WGMMA::kNumAccum / 4; ++ i) {
                         bool predicate = kMustUseUniformedScaleB or i < num_former_iters;
@@ -360,7 +374,7 @@ public:
                     uint32_t shape_m,
                     const CUtensorMap& tma_a_desc,
                     const CUtensorMap& tma_b_desc,
-                    const CUtensorMap& tma_scales_a_desc,
+                    // const CUtensorMap& tma_scales_a_desc,
                     const CUtensorMap& tma_d_desc,
                     cudaStream_t stream,
                     int num_sms, uint32_t smem_size) {
@@ -388,10 +402,14 @@ public:
         config.numAttrs = 1;
 
         // Launch
+        // auto status = cudaLaunchKernelEx(&config, kernel,
+        //                                  gmem_d, scales_b, grouped_layout,
+        //                                  shape_m,
+        //                                  tma_a_desc, tma_b_desc, tma_scales_a_desc, tma_d_desc);
         auto status = cudaLaunchKernelEx(&config, kernel,
-                                         gmem_d, scales_b, grouped_layout,
-                                         shape_m,
-                                         tma_a_desc, tma_b_desc, tma_scales_a_desc, tma_d_desc);
+            gmem_d, scales_b, grouped_layout,
+            shape_m,
+            tma_a_desc, tma_b_desc, tma_d_desc);
         DG_HOST_ASSERT(status == cudaSuccess);
     }
 
