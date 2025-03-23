@@ -3,6 +3,7 @@ import torch
 from . import jit
 from .jit_kernels import (
     gemm_fp8_fp8_bf16_nt,
+    gemm_bf16_fp8_bf16_nt,
     m_grouped_gemm_fp8_fp8_bf16_nt_contiguous,
     m_grouped_gemm_fp8_fp8_bf16_nt_masked,
     ceil_div,

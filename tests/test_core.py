@@ -37,6 +37,18 @@ def construct(m: int, k: int, n: int) -> \
     x_fp8 = (x_fp8[0], get_col_major_tma_aligned_tensor(x_fp8[1]))
     return x_fp8, y_fp8, out, ref_out
 
+# lvna: add construct_bf16_fp8 for bf16_fp8 gemm
+def construct_bf16_fp8(m: int, k: int, n: int) -> \
+        Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor]:
+    x = torch.randn((m, k), device='cuda', dtype=torch.bfloat16)
+    y = torch.randn((n, k), device='cuda', dtype=torch.bfloat16)
+    out = torch.empty((m, n), device='cuda', dtype=torch.bfloat16)
+    ref_out = x @ y.t()
+
+    x_bf16, y_fp8 = x, per_block_cast_to_fp8(y)
+    # Transpose earlier so that the testing will not trigger transposing kernels
+    return x_bf16, y_fp8, out, ref_out
+
 
 def construct_grouped(num_groups: int, m: int, k: int, n: int, is_masked: bool) -> \
         Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor]:
@@ -76,6 +88,28 @@ def test_gemm() -> None:
                 # Construct new tensors every time to avoid L2 cache acceleration
                 x_fp8, y_fp8, out, ref_out = construct(m, k, n)
                 deep_gemm.gemm_fp8_fp8_bf16_nt(x_fp8, y_fp8, out)
+
+            t = bench_kineto(test_func, 'fp8_gemm', suppress_kineto_output=True)
+            print(f' > Performance (m={m:5}, n={n:5}, k={k:5}): {t * 1e6:4.0f} us | '
+                  f'throughput: {2 * m * n * k / t / 1e12:4.0f} TFLOPS, '
+                  f'{(m * k + k * n + m * n * 2) / 1e9 / t:4.0f} GB/s')
+    print()
+
+
+def test_gemm_bf16_fp8() -> None:
+    print('Testing GEMM:')
+    for m in (64, 128, 4096):
+        for k, n in [(7168, 2112), (1536, 24576), (512, 32768), (16384, 7168), (7168, 4096), (2048, 7168)]:
+            x_bf16, y_fp8, out, ref_out = construct_bf16_fp8(m, k, n)
+            deep_gemm.gemm_bf16_fp8_bf16_nt(x_bf16, y_fp8, out)
+            diff = calc_diff(out, ref_out)
+            assert diff < 0.001, f'{m=}, {k=}, {n=}, {diff:.5f}'
+
+            # noinspection PyShadowingNames
+            def test_func():
+                # Construct new tensors every time to avoid L2 cache acceleration
+                x_bf16, y_fp8, out, ref_out = construct_bf16_fp8(m, k, n)
+                deep_gemm.gemm_bf16_fp8_bf16_nt(x_bf16, y_fp8, out)
 
             t = bench_kineto(test_func, 'fp8_gemm', suppress_kineto_output=True)
             print(f' > Performance (m={m:5}, n={n:5}, k={k:5}): {t * 1e6:4.0f} us | '
@@ -153,6 +187,8 @@ if __name__ == '__main__':
     print('Library path:')
     print(f' > {deep_gemm.__path__}\n')
 
-    test_gemm()
-    test_m_grouped_gemm_contiguous()
-    test_m_grouped_gemm_masked()
+    # test_gemm()
+    # test_m_grouped_gemm_contiguous()
+    # test_m_grouped_gemm_masked()
+    test_gemm_bf16_fp8()
+
