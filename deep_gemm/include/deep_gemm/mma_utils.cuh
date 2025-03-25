@@ -13,7 +13,7 @@ struct SM90_64x16x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %10, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n16k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n16k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7},"
                      " %8,"
                      " %9,"
@@ -35,14 +35,14 @@ struct SM90_64x16x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x16x32_F32BF16BF16_SS {
+struct SM90_64x16x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  bool scale_d) {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %10, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n16k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7},"
                      " %8,"
                      " %9,"
@@ -72,7 +72,7 @@ struct SM90_64x24x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %14, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n24k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n24k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11},"
                      " %12,"
@@ -97,7 +97,7 @@ struct SM90_64x24x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x24x32_F32BF16BF16_SS {
+struct SM90_64x24x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11,
@@ -105,7 +105,7 @@ struct SM90_64x24x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %14, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n24k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n24k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11},"
                      " %12,"
@@ -138,7 +138,7 @@ struct SM90_64x32x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %18, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n32k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n32k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15},"
                      " %16,"
@@ -163,7 +163,7 @@ struct SM90_64x32x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x32x32_F32BF16BF16_SS {
+struct SM90_64x32x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -171,7 +171,7 @@ struct SM90_64x32x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %18, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n32k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15},"
                      " %16,"
@@ -205,7 +205,7 @@ struct SM90_64x40x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %22, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n40k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n40k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15, "
                      " %16,  %17,  %18,  %19},"
@@ -233,7 +233,7 @@ struct SM90_64x40x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x40x32_F32BF16BF16_SS {
+struct SM90_64x40x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -242,7 +242,7 @@ struct SM90_64x40x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %22, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n40k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n40k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15, "
                      " %16,  %17,  %18,  %19},"
@@ -279,7 +279,7 @@ struct SM90_64x48x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %26, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n48k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n48k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15, "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23},"
@@ -307,7 +307,7 @@ struct SM90_64x48x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x48x32_F32BF16BF16_SS {
+struct SM90_64x48x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -316,7 +316,7 @@ struct SM90_64x48x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %26, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n48k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n48k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7, "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15, "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23},"
@@ -354,7 +354,7 @@ struct SM90_64x56x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %30, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n56k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n56k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -385,7 +385,7 @@ struct SM90_64x56x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x56x32_F32BF16BF16_SS {
+struct SM90_64x56x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -395,7 +395,7 @@ struct SM90_64x56x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %30, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n56k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n56k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -436,7 +436,7 @@ struct SM90_64x64x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %34, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n64k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n64k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -467,7 +467,7 @@ struct SM90_64x64x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x64x32_F32BF16BF16_SS {
+struct SM90_64x64x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -477,7 +477,7 @@ struct SM90_64x64x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %34, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n64k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -519,7 +519,7 @@ struct SM90_64x72x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %38, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n72k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n72k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -553,7 +553,7 @@ struct SM90_64x72x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x72x32_F32BF16BF16_SS {
+struct SM90_64x72x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -564,7 +564,7 @@ struct SM90_64x72x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %38, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n72k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n72k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -609,7 +609,7 @@ struct SM90_64x80x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %42, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n80k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n80k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -643,7 +643,7 @@ struct SM90_64x80x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x80x32_F32BF16BF16_SS {
+struct SM90_64x80x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -654,7 +654,7 @@ struct SM90_64x80x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %42, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n80k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n80k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -700,7 +700,7 @@ struct SM90_64x88x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %46, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n88k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n88k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -737,7 +737,7 @@ struct SM90_64x88x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x88x32_F32BF16BF16_SS {
+struct SM90_64x88x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -749,7 +749,7 @@ struct SM90_64x88x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %46, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n88k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n88k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -799,7 +799,7 @@ struct SM90_64x96x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %50, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n96k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n96k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -836,7 +836,7 @@ struct SM90_64x96x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x96x32_F32BF16BF16_SS {
+struct SM90_64x96x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -848,7 +848,7 @@ struct SM90_64x96x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %50, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n96k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n96k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -898,7 +898,7 @@ struct SM90_64x104x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %54, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n104k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n104k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -938,7 +938,7 @@ struct SM90_64x104x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x104x32_F32BF16BF16_SS {
+struct SM90_64x104x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -951,7 +951,7 @@ struct SM90_64x104x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %54, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n104k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n104k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1004,7 +1004,7 @@ struct SM90_64x112x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %58, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n112k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n112k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1044,7 +1044,7 @@ struct SM90_64x112x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x112x32_F32BF16BF16_SS {
+struct SM90_64x112x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -1057,7 +1057,7 @@ struct SM90_64x112x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %58, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n112k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n112k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1111,7 +1111,7 @@ struct SM90_64x120x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %62, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n120k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n120k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1154,7 +1154,7 @@ struct SM90_64x120x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x120x32_F32BF16BF16_SS {
+struct SM90_64x120x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -1168,7 +1168,7 @@ struct SM90_64x120x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %62, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n120k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n120k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1225,7 +1225,7 @@ struct SM90_64x128x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %66, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n128k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n128k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1268,7 +1268,7 @@ struct SM90_64x128x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x128x32_F32BF16BF16_SS {
+struct SM90_64x128x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -1282,7 +1282,7 @@ struct SM90_64x128x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %66, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n128k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1343,7 +1343,7 @@ struct SM90_64x192x32_F32E4M3E4M3_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %98, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n192k32.f32.e4m3.e4m3"
+                     "wgmma.mma_async.sync.aligned.m64n192k16.f32.e4m3.e4m3"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1398,7 +1398,7 @@ struct SM90_64x192x32_F32E4M3E4M3_SS {
     static constexpr int kNumAccum = M * N / 128;
 };
 
-struct SM90_64x192x32_F32BF16BF16_SS {
+struct SM90_64x192x16_F32BF16BF16_SS {
     __device__ static void wgmma(uint64_t const& desc_a, uint64_t const& desc_b,
                                  float& d00, float& d01, float& d02, float& d03, float& d04, float& d05, float& d06, float& d07,
                                  float& d08, float& d09, float& d10, float& d11, float& d12, float& d13, float& d14, float& d15,
@@ -1416,7 +1416,7 @@ struct SM90_64x192x32_F32BF16BF16_SS {
         asm volatile("{\n"
                      ".reg .pred p;\n"
                      "setp.ne.b32 p, %98, 0;\n"
-                     "wgmma.mma_async.sync.aligned.m64n192k32.f32.bf16.bf16"
+                     "wgmma.mma_async.sync.aligned.m64n192k16.f32.bf16.bf16"
                      "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
                      " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
                      " %16,  %17,  %18,  %19,  %20,  %21,  %22,  %23,  "
@@ -1618,22 +1618,22 @@ struct FP8MMASelector {
 template <int N>
 struct BF16MMASelector {
     static constexpr auto select_type() {
-        if constexpr (N == 16) return SM90_64x16x32_F32BF16BF16_SS();
-        if constexpr (N == 24) return SM90_64x24x32_F32BF16BF16_SS();
-        if constexpr (N == 32) return SM90_64x32x32_F32BF16BF16_SS();
-        if constexpr (N == 40) return SM90_64x40x32_F32BF16BF16_SS();
-        if constexpr (N == 48) return SM90_64x48x32_F32BF16BF16_SS();
-        if constexpr (N == 56) return SM90_64x56x32_F32BF16BF16_SS();
-        if constexpr (N == 64) return SM90_64x64x32_F32BF16BF16_SS();
-        if constexpr (N == 72) return SM90_64x72x32_F32BF16BF16_SS();
-        if constexpr (N == 80) return SM90_64x80x32_F32BF16BF16_SS();
-        if constexpr (N == 88) return SM90_64x88x32_F32BF16BF16_SS();
-        if constexpr (N == 96) return SM90_64x96x32_F32BF16BF16_SS();
-        if constexpr (N == 104) return SM90_64x104x32_F32BF16BF16_SS();
-        if constexpr (N == 112) return SM90_64x112x32_F32BF16BF16_SS();
-        if constexpr (N == 120) return SM90_64x120x32_F32BF16BF16_SS();
-        if constexpr (N == 128) return SM90_64x128x32_F32BF16BF16_SS();
-        if constexpr (N == 192) return SM90_64x192x32_F32BF16BF16_SS();
+        if constexpr (N == 16) return SM90_64x16x16_F32BF16BF16_SS();
+        if constexpr (N == 24) return SM90_64x24x16_F32BF16BF16_SS();
+        if constexpr (N == 32) return SM90_64x32x16_F32BF16BF16_SS();
+        if constexpr (N == 40) return SM90_64x40x16_F32BF16BF16_SS();
+        if constexpr (N == 48) return SM90_64x48x16_F32BF16BF16_SS();
+        if constexpr (N == 56) return SM90_64x56x16_F32BF16BF16_SS();
+        if constexpr (N == 64) return SM90_64x64x16_F32BF16BF16_SS();
+        if constexpr (N == 72) return SM90_64x72x16_F32BF16BF16_SS();
+        if constexpr (N == 80) return SM90_64x80x16_F32BF16BF16_SS();
+        if constexpr (N == 88) return SM90_64x88x16_F32BF16BF16_SS();
+        if constexpr (N == 96) return SM90_64x96x16_F32BF16BF16_SS();
+        if constexpr (N == 104) return SM90_64x104x16_F32BF16BF16_SS();
+        if constexpr (N == 112) return SM90_64x112x16_F32BF16BF16_SS();
+        if constexpr (N == 120) return SM90_64x120x16_F32BF16BF16_SS();
+        if constexpr (N == 128) return SM90_64x128x16_F32BF16BF16_SS();
+        if constexpr (N == 192) return SM90_64x192x16_F32BF16BF16_SS();
     }
 
     using type = decltype(select_type());
