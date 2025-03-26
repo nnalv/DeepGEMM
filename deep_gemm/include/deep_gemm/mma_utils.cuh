@@ -60,7 +60,7 @@ struct SM90_64x16x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 16;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -126,7 +126,7 @@ struct SM90_64x24x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 24;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -192,7 +192,7 @@ struct SM90_64x32x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 32;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -266,7 +266,7 @@ struct SM90_64x40x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 40;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -340,7 +340,7 @@ struct SM90_64x48x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 48;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -422,7 +422,7 @@ struct SM90_64x56x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 56;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -504,7 +504,7 @@ struct SM90_64x64x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 64;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -594,7 +594,7 @@ struct SM90_64x72x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 72;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -684,7 +684,7 @@ struct SM90_64x80x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 80;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -782,7 +782,7 @@ struct SM90_64x88x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 88;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -881,7 +881,7 @@ struct SM90_64x96x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 96;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -987,7 +987,7 @@ struct SM90_64x104x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 104;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -1093,7 +1093,7 @@ struct SM90_64x112x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 112;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -1207,7 +1207,7 @@ struct SM90_64x120x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 120;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -1321,7 +1321,7 @@ struct SM90_64x128x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 128;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
@@ -1467,7 +1467,7 @@ struct SM90_64x192x16_F32BF16BF16_SS {
 
     static constexpr int M = 64;
     static constexpr int N = 192;
-    static constexpr int K = 32;
+    static constexpr int K = 16;
     static constexpr int kNumAccum = M * N / 128;
 };
 
