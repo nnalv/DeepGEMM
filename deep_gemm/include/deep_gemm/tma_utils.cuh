@@ -77,6 +77,7 @@ CUtensorMap make_2d_tma_copy_desc(T* global_address, uint64_t gmem_dim[2],
             CUtensorMapInterleave::CU_TENSOR_MAP_INTERLEAVE_NONE, swizzle_type,
             CUtensorMapL2promotion::CU_TENSOR_MAP_L2_PROMOTION_L2_256B,
             CUtensorMapFloatOOBfill::CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+    // printf("cuTensorMapEncodeTiled res with code: %d\n", result);
     DG_HOST_ASSERT(result == CUDA_SUCCESS);
     return tensor_map;
 }
