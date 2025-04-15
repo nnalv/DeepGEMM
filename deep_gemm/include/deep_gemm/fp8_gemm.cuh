@@ -170,6 +170,7 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     // printf("------   Block scheduler -----");
     // Block scheduler
     uint32_t m_block_idx, n_block_idx;
+
     auto scheduler = Scheduler<kGemmType, SHAPE_N, BLOCK_M, BLOCK_N, kNumGroups, kNumTMAMulticast>(shape_m, grouped_layout);
 
     if (threadIdx.x >= kNumMathThreads) {
@@ -202,8 +203,11 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                         tma_copy<kNumTMAMulticast>(&tensor_map_a, reinterpret_cast<uint64_t*>(&full_barrier),
                                                    smem_a[s], k_idx, scheduler.get_global_idx(shape_m, BLOCK_M, m_block_idx));
 
-                        // for (int i = 0; i < BLOCK_M * BLOCK_K; ++ i) {
-                        //     printf("[blk:%d, thread:%d, data:%.3f]", blockIdx.x, threadIdx.x, (float)(smem_a[s][i]));
+                        // int num_a_elements = BLOCK_M * BLOCK_K;
+                        // for (int i = 0; i < num_a_elements; ++ i) {
+                        //     if (n_block_idx == 0){
+                        //         printf("blk:%d, thread:%d, data:%.3f ",  blockIdx.x, threadIdx.x, (float)smem_a[s][i]);
+                        //     }   
                         // }
                         // tma_copy<kNumTMAMulticast>(&tensor_map_scales_a, reinterpret_cast<uint64_t*>(&full_barrier),
                         //                            smem_scales_a[s], m_block_idx * BLOCK_M,
@@ -217,14 +221,19 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                                  smem_b_tmp, k_idx, scheduler.get_global_idx<false>(SHAPE_N, BLOCK_N, n_block_idx, m_block_idx));
                         // printf("------   Convert smem_b  -----");
                         // printf("[blk:%d, %d, %d, %d, %d]",s, blockIdx.x, m_block_idx, n_block_idx, k_iter);
-                        int num_elements = BLOCK_N * BLOCK_K;
-                        for (int i = 0; i < num_elements; ++ i) {
-                            smem_b[s][i] = fp8_to_bf16(smem_b_tmp[i]);
-                            // printf("[blk:%d, %d;;]",blockIdx.x, i);
-                            // if (n_block_idx == 0){
-                            //     printf("[blk:%d, thread:%d, data:%.3f -> %.3f]", blockIdx.x, threadIdx.x, (float)(smem_b_tmp[i]), (float)smem_b[s][i]);
-                            // }   
-                        }
+                        // int num_elements = BLOCK_N * BLOCK_K;
+                        // for (int i = 0; i < num_elements; ++ i) {
+                        //     smem_b[s][i] = (__nv_bfloat16)smem_b_tmp[i];
+                        //     // printf("[blk:%d, %d;;]",blockIdx.x, i);
+                        //     if (n_block_idx == 4){
+                        //         printf("blk:%d, thread:%d, data:%.3f-> %.3f ",  blockIdx.x, threadIdx.x, (float)(smem_b_tmp[i]), (float)smem_b[s][i]);
+                        //     }   
+                        // }
+                        // for (int k = 0; k < BLOCK_K / WGMMA::K; ++ k) {
+                        //     auto p_a = smem_a[s] + k * WGMMA::K;
+                        //     auto p_b = smem_b_tmp + k * WGMMA::K;
+                        //     printf("nblk:%d, smem_a:%.3f, smem_b:%.3f", n_block_idx, (float)*p_a,  (float)*p_b);
+                        // }
 
                         // full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE);
                         full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_TEMP_SIZE);
@@ -330,8 +339,8 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                     warpgroup_arrive();
                     
                     // printf("gridDim:%d,%d,%d, blockDim:%d,%d,%d, blockId:%d, threadId:%d,%d,%d ", gridDim.x, gridDim.y,gridDim.z, blockDim.x, blockDim.y,blockDim.z, blockIdx.x, threadIdx.x,threadIdx.y,threadIdx.z);
-                    int tid = threadIdx.x + blockIdx.x * gridDim.x;
-                    printf("tid:%d, blk:%d, data:%.3f, ", tid, blockIdx.x,(float)smem_b[s][tid]);
+                    // int tid = threadIdx.x + blockIdx.x * gridDim.x;
+                    // printf("tid:%d, blk:%d, data:%.3f, ", tid, blockIdx.x,(float)smem_b[s][tid]);
                     // if(blockIdx.x == 0 && threadIdx.x==0){
                     //     for (int i = 0; i < BLOCK_N*BLOCK_K; ++ i) {
                     //         printf("tid:%d, data:%.3f, ", tid, (float)smem_b[s][tid]);
@@ -340,11 +349,11 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                     // printf("------   WGMMA::wgmma  -----");
                     #pragma unroll
                     for (int k = 0; k < BLOCK_K / WGMMA::K; ++ k) {
-                        auto desc_a = make_smem_desc(smem_a[s] + math_wg_idx * WGMMA::M * BLOCK_K + k * WGMMA::K, 1);
-                        auto desc_b = make_smem_desc(smem_b[s] + k * WGMMA::K, 1);
-                        // if(n_block_idx ==0 && k == 0){
-                        //     printf("smem_a:%.3f, smem_b:%.3f", (float)*(smem_a[s]+ math_wg_idx * WGMMA::M * BLOCK_K + k * WGMMA::K),  (float)*(smem_b[s] + k * WGMMA::K));
-                        // }
+                        auto p_a = smem_a[s] + math_wg_idx * WGMMA::M * BLOCK_K + k * WGMMA::K;
+                        auto desc_a = make_smem_desc(p_a, 0);
+                        auto p_b = smem_b[s] + k * WGMMA::K;
+                        auto desc_b = make_smem_desc(p_b, 1);
+                        // printf("nblk:%d, smem_a:%.3f, smem_b:%.3f", n_block_idx, (float)*p_a,  (float)*p_b);
                         WGMMA::wgmma(desc_a, desc_b, accum, k);
                     }
                     warpgroup_commit_batch();
@@ -525,6 +534,8 @@ public:
             uint32_t gmem_rows, uint32_t gmem_cols,
             uint32_t smem_rows, uint32_t smem_cols,
             CUtensorMapSwizzle swizzle_type = CUtensorMapSwizzle::CU_TENSOR_MAP_SWIZZLE_128B) {
+        
+        // printf("gmem_cols:%ld, gmem_rows:%ld, T size:%d ", gmem_cols, gmem_rows, sizeof(T));
         if (layout == Layout::RowMajor) {
             uint64_t gmem_dim[2] = {gmem_cols, gmem_rows};
             uint32_t smem_dim[2] = {smem_cols, smem_rows};

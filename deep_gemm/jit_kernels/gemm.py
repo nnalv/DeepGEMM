@@ -20,7 +20,7 @@ constexpr auto kNumTMAMulticast = {NUM_TMA_MULTICAST};
 using GemmType = Gemm<N, K, BLOCK_M, BLOCK_N, 128, 1, kNumStages, kNumTMAMulticast, GemmType::Normal>;
 
 // Launch kernel
-// printf("before make_desc  ");
+ // printf("before make_desc  ");
 auto tma_a_desc = GemmType::make_2d_tma_a_desc(lhs, m);
 // printf("make_2d_tma_a_desc  ");
 auto tma_b_desc = GemmType::make_2d_tma_b_desc(rhs);

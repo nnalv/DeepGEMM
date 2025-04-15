@@ -54,10 +54,10 @@ def construct_bf16_fp8(m: int, k: int, n: int) -> \
 def construct_bf16_fp8_specific(m: int, k: int, n: int) -> \
         Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor]:
     # x = torch.ones((m, k), device='cuda', dtype=torch.bfloat16)
-    x = torch.arange(0, m, device='cuda', dtype=torch.bfloat16).view(-1, 1).repeat(1, k)
+    x = torch.arange(m, device='cuda', dtype=torch.bfloat16).unsqueeze(1).repeat(1, k)
     # x = torch.tril(x)
     # y = torch.ones((n, k), device='cuda', dtype=torch.bfloat16)
-    y = torch.arange(0, n, device='cuda', dtype=torch.bfloat16).view(-1, 1).repeat(1, k)
+    y = torch.arange(n, device='cuda', dtype=torch.bfloat16).unsqueeze(1).repeat(1, k)
     out = torch.empty((m, n), device='cuda', dtype=torch.bfloat16)
     ref_out = x @ y.t()
 

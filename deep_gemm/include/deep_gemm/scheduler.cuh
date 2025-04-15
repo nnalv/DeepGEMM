@@ -53,6 +53,7 @@ struct Scheduler {
         auto in_group_idx = block_idx % num_blocks_per_group;
         m_block_idx = in_group_idx / num_n_blocks_in_group;
         n_block_idx = first_n_block_idx + in_group_idx % num_n_blocks_in_group;
+        // printf("get_swizzled_block_idx, params:{%d}{%d}{%d}{%d}", num_m_blocks, block_idx, m_block_idx, n_block_idx);
     }
 
     template <bool kIgnoreGroupedForGroupedContiguous=true>
@@ -70,7 +71,7 @@ struct Scheduler {
 
     __device__ __forceinline__ bool get_next_block(uint32_t& m_block_idx, uint32_t& n_block_idx) {
         const auto next_block_idx = (++ current_iter) * gridDim.x + blockIdx.x;
-
+        
         if constexpr (kGemmType == GemmType::GroupedMasked) {
             uint32_t num_m_blocks;
             while (true) {
@@ -94,6 +95,8 @@ struct Scheduler {
                 return false;
 
             get_swizzled_block_idx(num_aligned_m_blocks, next_block_idx, m_block_idx, n_block_idx);
+            // printf("get_next_block:current_iter-{%d},gridDim-{%d},blockIdx-{%d}\n", current_iter, gridDim.x, blockIdx.x);
+
         }
         return true;
     }
