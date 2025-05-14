@@ -49,22 +49,34 @@ def construct_bf16_fp8(m: int, k: int, n: int) -> \
     x_bf16, y_fp8 = x, per_block_cast_to_fp8(y)
     return x_bf16, y_fp8, out, ref_out
 
+def per_block_cast_to_fp8_specific(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    assert x.dim() == 2
+    m, n = x.shape
+    x_padded = torch.zeros((ceil_div(m, 64) * 64, ceil_div(n, 64) * 64), dtype=x.dtype, device=x.device)
+    x_padded[:m, :n] = x
+    x_view = x_padded.view(-1, 64, x_padded.size(1) // 64, 64)
+    x_amax = x_view.abs().float().amax(dim=(1, 3), keepdim=True).clamp(1e-4)
+    x_scaled = (x_view * (448.0 / x_amax)).to(torch.float8_e4m3fn)
+    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), (x_amax / 448.0).view(x_view.size(0), x_view.size(2))
 
 # lvna: add construct_bf16_fp8 for bf16_fp8 gemm
 def construct_bf16_fp8_specific(m: int, k: int, n: int) -> \
         Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor]:
-    # x = torch.ones((m, k), device='cuda', dtype=torch.bfloat16)
-    x = torch.arange(m, device='cuda', dtype=torch.bfloat16).unsqueeze(1).repeat(1, k)
+    x = torch.ones((m, k), device='cuda', dtype=torch.bfloat16)
+    # x = torch.arange(m, device='cuda', dtype=torch.bfloat16).unsqueeze(1).repeat(1, k)
     # x = torch.tril(x)
     # y = torch.ones((n, k), device='cuda', dtype=torch.bfloat16)
+    # y = torch.tril(y)
     y = torch.arange(n, device='cuda', dtype=torch.bfloat16).unsqueeze(1).repeat(1, k)
     out = torch.empty((m, n), device='cuda', dtype=torch.bfloat16)
     ref_out = x @ y.t()
 
-    x_bf16, y_fp8 = x, per_block_cast_to_fp8(y)
+    x_bf16, y_fp8 = x, per_block_cast_to_fp8_specific(y)
     # Transpose earlier so that the testing will not trigger transposing kernels
     y_fp8=(y.to(torch.float8_e4m3fn), torch.ones_like(y_fp8[1]))
+    # torch.set_printoptions(threshold=np.inf)
     print(x_bf16)
+    print(y_fp8)
     return x_bf16, y_fp8, out, ref_out
 
 
@@ -119,15 +131,17 @@ def test_gemm_bf16_fp8() -> None:
     # for m in (64, 128, 4096):
     for m in [64]:
         # for k, n in [(128, 64), (7168, 2112), (1536, 24576), (512, 32768), (16384, 7168), (7168, 4096), (2048, 7168)]:
-        for k, n in [(128, 64)]:
+        for k, n in [(64, 64)]:
             x_bf16, y_fp8, out, ref_out = construct_bf16_fp8_specific(m, k, n)
             deep_gemm.gemm_bf16_fp8_bf16_nt(x_bf16, y_fp8, out)
             print(f"-----test cal fin-----\n")
             diff = calc_diff(out, ref_out)
+            print(f"-----test calc_diff fin-----\n")
             torch.set_printoptions(threshold=np.inf)
             torch.set_printoptions(precision=1, sci_mode=False)
-            print(f"out:{out}\n, ref:{ref_out}\n, diff:{diff:.5f}")
-            # assert diff < 0.001, f'{m=}, {k=}, {n=}, {diff:.5f}'
+            # print(f"x:{x_bf16}\n, y:{y_fp8}\n")
+            # print(f"out:{out}\n, ref:{ref_out}\n, diff:{diff:.5f}")
+            assert diff < 0.001, f'{m=}, {k=}, {n=}, {diff:.5f}'
 
             # noinspection PyShadowingNames
             # def test_func():

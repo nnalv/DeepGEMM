@@ -17,17 +17,18 @@ constexpr auto kNumStages = {NUM_STAGES};
 constexpr auto kNumTMAMulticast = {NUM_TMA_MULTICAST};
 
 // Make a templated GEMM
-using GemmType = Gemm<N, K, BLOCK_M, BLOCK_N, 128, 1, kNumStages, kNumTMAMulticast, GemmType::Normal>;
+// TODO: BLOCK_K=64
+using GemmType = Gemm<N, K, BLOCK_M, BLOCK_N, 64, 1, kNumStages, kNumTMAMulticast, GemmType::Normal>;
 
 // Launch kernel
- // printf("before make_desc  ");
+//printf("before make_desc. ");
 auto tma_a_desc = GemmType::make_2d_tma_a_desc(lhs, m);
-// printf("make_2d_tma_a_desc  ");
+//printf("make_2d_tma_a_desc  ");
 auto tma_b_desc = GemmType::make_2d_tma_b_desc(rhs);
-// printf("make_2d_tma_b_desc  ");
+//printf("make_2d_tma_b_desc  ");
 // auto tma_scales_a_desc = GemmType::make_2d_tma_scales_a_desc(lhs_scales, m);
 auto tma_d_desc = GemmType::make_2d_tma_d_desc(out, m);
-// printf("make_2d_tma_d_desc  ");
+//printf("make_2d_tma_d_desc  ");
 GemmType::run(out, rhs_scales, nullptr,
               m,
               tma_a_desc, tma_b_desc, tma_d_desc,
@@ -58,11 +59,13 @@ def is_tma_multicast_legal(n: int, block_n: int, num_tma_multicast: int, num_sms
 #     smem_size += smem_barrier
 #     return smem_size
 
-def get_smem_size(num_stages: int, k: int, block_m: int, block_n: int, block_k: int = 128) -> int:
+
+ # TODO: BLOCK_K=64
+def get_smem_size(num_stages: int, k: int, block_m: int, block_n: int, block_k: int = 64) -> int:
     smem_d = block_m * block_n * 2
     smem_a_per_stage = block_m * block_k * 2
     smem_b_per_stage = block_n * block_k * 2
-    smem_b_temp = block_n * block_k
+    smem_b_temp = block_n * block_k * 2
     smem_scales_b = ceil_div(k, block_k) * 4
     smem_barrier = num_stages * 8 * 2
 
@@ -201,7 +204,8 @@ def gemm_bf16_fp8_bf16_nt(lhs: torch.Tensor,
     n, k_ = rhs.shape
     m_, n_ = out.shape
 
-    assert n % 64 == 0 and k % 128 == 0
+    # TODO: BLOCK_K=64
+    assert n % 64 == 0 and k % 64 == 0
 
     # Type and shape checks
     assert m == m_ and n == n_ and k == k_

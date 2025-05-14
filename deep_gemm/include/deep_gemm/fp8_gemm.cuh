@@ -42,7 +42,8 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                 const __grid_constant__ CUtensorMap tensor_map_d) {
 #if (defined(__CUDA_ARCH__) and (__CUDA_ARCH__ >= 900)) or defined(__CLION_IDE__)
     // Scaling checks
-    DG_STATIC_ASSERT(BLOCK_K == 128, "Only support per-128-channel FP8 scaling");
+    // TODO: BLOCK_K=64
+    //DG_STATIC_ASSERT(BLOCK_K == 128, "Only support per-128-channel FP8 scaling");
     DG_STATIC_ASSERT(ceil_div(BLOCK_N, BLOCK_K) == 1, "Too much B scales in a single block");
 
     // Types
@@ -56,8 +57,8 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     static constexpr uint32_t SMEM_D_SIZE = BLOCK_M * BLOCK_N * sizeof(__nv_bfloat16);
     // static constexpr uint32_t SMEM_A_SIZE_PER_STAGE = BLOCK_M * BLOCK_K * sizeof(__nv_fp8_e4m3);
     static constexpr uint32_t SMEM_A_SIZE_PER_STAGE = BLOCK_M * BLOCK_K * sizeof(__nv_bfloat16);
-    static constexpr uint32_t SMEM_B_SIZE_PER_STAGE = BLOCK_N * BLOCK_K * sizeof(__nv_bfloat16);
-    static constexpr uint32_t SMEM_B_TEMP_SIZE = BLOCK_N * BLOCK_K * sizeof(__nv_fp8_e4m3);
+    static constexpr uint32_t SMEM_B_SIZE_PER_STAGE = 2 * BLOCK_N * BLOCK_K * sizeof(__nv_fp8_e4m3);
+    static constexpr uint32_t SMEM_B_TEMP_SIZE = BLOCK_N * BLOCK_K * sizeof(__nv_bfloat16);
     static constexpr uint32_t SMEM_SCALES_A_SIZE_PER_STAGE = BLOCK_M * sizeof(float);
     static constexpr uint32_t SHAPE_K_SCALES = ceil_div(SHAPE_K, BLOCK_K);
     static constexpr uint32_t SMEM_SCALES_B_SIZE = ceil_div<uint32_t>(SHAPE_K_SCALES * (kMustUseUniformedScaleB ? 1 : 2) * sizeof(float), sizeof(Barrier)) * sizeof(Barrier);
@@ -69,7 +70,7 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     constexpr uint32_t kNumIterations = ceil_div(SHAPE_K, kFullKOfAllStages);
     const uint32_t warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
     const uint32_t lane_idx = get_lane_id();
-    // printf("block-warp-lane:(%d,%d,%d), %d, %d\n",blockIdx.x,blockIdx.y,blockIdx.z, threadIdx.x / 32, lane_idx); 
+    // printf("block-warp-lane:(%d,%d,%d), %d, %d\n",blockIdx.x,blockIdx.y,blockIdx.z,warp_idx, lane_idx); 
     __syncwarp();
 
 
@@ -85,15 +86,17 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
 
     // Align to 1024 bytes for swizzle-128B
     extern __shared__ __align__(1024) uint8_t smem_buffer[];
+    // extern __shared__ __align__(128) uint8_t smem_buffer[];
     DG_STATIC_ASSERT(SMEM_D_SIZE % 1024 == 0, "Shared memory of A/B must be aligned to 1024 bytes");
 
     // printf("------  Data on shared memory -----");
     // Data on shared memory
+    // #define ALIGN_TO_128_BYTES(ptr) (reinterpret_cast<uint8_t*>((reinterpret_cast<uintptr_t>(ptr) + 127) & ~127))
     auto smem_d = reinterpret_cast<__nv_bfloat16*>(smem_buffer);
-    auto smem_b_tmp = reinterpret_cast<__nv_fp8_e4m3*>(smem_buffer+SMEM_D_SIZE);
+    auto smem_b_tmp = reinterpret_cast<__nv_bfloat16*>(smem_buffer+SMEM_D_SIZE);
     // __nv_fp8_e4m3* smem_a[kNumStages];
     __nv_bfloat16* smem_a[kNumStages];
-    __nv_bfloat16* smem_b[kNumStages];
+    __nv_fp8_e4m3* smem_b[kNumStages];
     // float* smem_scales_a[kNumStages];
     float* smem_scales_b;
 
@@ -109,11 +112,21 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
     for (int i = 0; i < kNumStages; ++ i) {
         // smem_a[i] = reinterpret_cast<__nv_fp8_e4m3*>(smem_buffer + SMEM_D_SIZE + i * SMEM_A_SIZE_PER_STAGE);
         smem_a[i] = reinterpret_cast<__nv_bfloat16*>(smem_buffer + SMEM_D_SIZE + SMEM_B_TEMP_SIZE +  i * SMEM_A_SIZE_PER_STAGE);
-        smem_b[i] = reinterpret_cast<__nv_bfloat16*>(smem_buffer + SMEM_D_SIZE + SMEM_B_TEMP_SIZE + kNumStages * SMEM_A_SIZE_PER_STAGE + i * SMEM_B_SIZE_PER_STAGE);
+        smem_b[i] = reinterpret_cast<__nv_fp8_e4m3*>(smem_buffer + SMEM_D_SIZE + SMEM_B_TEMP_SIZE + kNumStages * SMEM_A_SIZE_PER_STAGE + i * SMEM_B_SIZE_PER_STAGE);
         // smem_scales_a[i] = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE) + i * SMEM_SCALES_A_SIZE_PER_STAGE);
     }
     // smem_scales_b = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE));
     smem_scales_b = reinterpret_cast<float*>(smem_buffer + SMEM_D_SIZE + SMEM_B_TEMP_SIZE + kNumStages * (SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE));
+
+    // if(threadIdx.x ==0 && warp_idx==0){
+    //     printf("smem_d: %p\n", smem_d);
+    //     printf("smem_b_tmp: %p\n", smem_b_tmp);
+    //     for (int i = 0; i < kNumStages; ++i) {
+    //         printf("smem_a[%d]: %p\n", i, smem_a[i]);
+    //         printf("smem_b[%d]: %p\n", i, smem_b[i]);
+    //     }
+    //     printf("smem_scales_b: %p\n", smem_scales_b);
+    // }
 
     // printf("------  Fill barriers -----");
     // Fill barriers
@@ -218,8 +231,8 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                         // tma_copy(&tensor_map_b, reinterpret_cast<uint64_t*>(&full_barrier),
                         //          smem_b[s], k_idx, scheduler.get_global_idx<false>(SHAPE_N, BLOCK_N, n_block_idx, m_block_idx));
                         tma_copy(&tensor_map_b, reinterpret_cast<uint64_t*>(&full_barrier),
-                                 smem_b_tmp, k_idx, scheduler.get_global_idx<false>(SHAPE_N, BLOCK_N, n_block_idx, m_block_idx));
-                        // printf("------   Convert smem_b  -----");
+                                 smem_b[s], k_idx, scheduler.get_global_idx<false>(SHAPE_N, BLOCK_N, n_block_idx, m_block_idx));
+                         // printf("------   Convert smem_b  -----");
                         // printf("[blk:%d, %d, %d, %d, %d]",s, blockIdx.x, m_block_idx, n_block_idx, k_iter);
                         // int num_elements = BLOCK_N * BLOCK_K;
                         // for (int i = 0; i < num_elements; ++ i) {
@@ -234,9 +247,14 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                         //     auto p_b = smem_b_tmp + k * WGMMA::K;
                         //     printf("nblk:%d, smem_a:%.3f, smem_b:%.3f", n_block_idx, (float)*p_a,  (float)*p_b);
                         // }
-
+                        // if (n_block_idx==0){
+                        //     int num_a=BLOCK_N * BLOCK_K;
+                        //     for (int i = 0; i < num_a; ++i) {
+                        //         printf("%.3f  ", (float)smem_a[s][i]);
+                        //     } 
+                        // }
                         // full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE + SMEM_SCALES_A_SIZE_PER_STAGE);
-                        full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_TEMP_SIZE);
+                        full_barrier.arrive_and_expect_tx(SMEM_A_SIZE_PER_STAGE + SMEM_B_SIZE_PER_STAGE/2);
                     }
 
                     // printf("------   Wait unaligned cases -----");
@@ -346,14 +364,30 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
                     //         printf("tid:%d, data:%.3f, ", tid, (float)smem_b[s][tid]);
                     //     }
                     // }
+                    // printf("[blk:%d, warp:%d, lane:%d, thread:%d; ]",blockIdx.x, warp_idx, lane_idx, threadIdx.x);
                     // printf("------   WGMMA::wgmma  -----");
+                    constexpr int ELEMENTS_PER_THREAD = (BLOCK_K * BLOCK_N) / 128;
+                    constexpr int NUM_ELEMENTS=BLOCK_K * BLOCK_N * 2;
+                    #pragma unroll
+                    for (int i = 0; i < NUM_ELEMENTS; i=i+256) {
+                        int src_idx = threadIdx.x + (threadIdx.x/BLOCK_K) * BLOCK_K + i; 
+                        int desc_idx = i / 2 + threadIdx.x;
+                        auto fp_value = (float)smem_b[s][src_idx];
+                        smem_b_tmp[desc_idx]=__float2bfloat16(fp_value);
+                    }
+                    __syncwarp();   
+                    
+                    if (n_block_idx==3 && threadIdx.x==0){
+                        int num_b= BLOCK_N * BLOCK_K * 2;
+                        for (int i = 0; i < num_b; ++i) {
+                            printf("[%d-%.3f]", i, (float)smem_b[s][i]);
+                        } 
+                    }
+                    
                     #pragma unroll
                     for (int k = 0; k < BLOCK_K / WGMMA::K; ++ k) {
-                        auto p_a = smem_a[s] + math_wg_idx * WGMMA::M * BLOCK_K + k * WGMMA::K;
-                        auto desc_a = make_smem_desc(p_a, 0);
-                        auto p_b = smem_b[s] + k * WGMMA::K;
-                        auto desc_b = make_smem_desc(p_b, 1);
-                        // printf("nblk:%d, smem_a:%.3f, smem_b:%.3f", n_block_idx, (float)*p_a,  (float)*p_b);
+                        auto desc_a = make_smem_desc(smem_a[s]+ + math_wg_idx * WGMMA::M * BLOCK_K + k * WGMMA::K, 1);
+                        auto desc_b = make_smem_desc(smem_b_tmp + k * WGMMA::K, 1);
                         WGMMA::wgmma(desc_a, desc_b, accum, k);
                     }
                     warpgroup_commit_batch();
@@ -364,6 +398,12 @@ fp8_gemm_kernel(__nv_bfloat16* gmem_d, float* scales_b, int* grouped_layout,
 
                     // Notify barrier arrival
                     empty_barrier_arrive(s);
+
+                    // if (n_block_idx==0 && threadIdx.x==0){
+                    //     for(int i=0; i<WGMMA::kNumAccum;++i){
+                    //         printf("accum[%d]:%.3f ", i, accum[i]);
+                    //     }
+                    // }
 
                     // printf("------   Epiloge  -----");
                     // Promote with scales
@@ -500,11 +540,12 @@ public:
 
         // Call make_2d_tma_desc with RowMajor layout
         return make_2d_tma_desc(global_address, Layout::RowMajor,
-                                shape_m * (kGemmType == GemmType::GroupedMasked ? kNumGroups : 1), SHAPE_K, BLOCK_M, BLOCK_K, CUtensorMapSwizzle::CU_TENSOR_MAP_SWIZZLE_NONE);                          
+                                shape_m * (kGemmType == GemmType::GroupedMasked ? kNumGroups : 1), SHAPE_K, BLOCK_M, BLOCK_K);                          
     }
 
     template <typename T>
     static CUtensorMap make_2d_tma_b_desc(T* global_address) {
+        // printf("Function signature:%s ", __PRETTY_FUNCTION__);
         return make_2d_tma_desc(global_address, Layout::ColMajor,
                                 SHAPE_K, SHAPE_N * (kGemmType != GemmType::Normal ? kNumGroups : 1), BLOCK_K, BLOCK_N);
     }
