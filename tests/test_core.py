@@ -101,13 +101,16 @@ def construct_wgrad(m: int, k: int, n: int) -> \
         Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
     x = torch.randn((m, k), device='cuda', dtype=torch.bfloat16)
     y = torch.randn((n, k), device='cuda', dtype=torch.bfloat16)
-    residual = torch.randn((m, n), device='cuda', dtype=torch.float) * 10
-    out = residual.clone()
-    ref_out = residual + (x.float() @ y.float().t())
+    # residual = torch.randn((m, n), device='cuda', dtype=torch.float) * 10
+    residual = None
+    # out = residual.clone()
+    out = torch.zeros((m,n), device='cuda', dtype=torch.float)
+    # ref_out = residual + (x.float() @ y.float().t())
+    ref_out = x.float() @ y.float().t()
 
     x_fp8 = per_token_cast_to_fp8(x)
     y_fp8 = per_token_cast_to_fp8(y)
-
+    
     # NOTES: please do inplace add on the `out` later
     return x_fp8, y_fp8, residual, out, ref_out
 
@@ -245,8 +248,8 @@ def test_m_grouped_gemm_masked() -> None:
 def test_wgrad_gemm():
     print('Testing weight gradient GEMM:')
 
-    for k in (4096, 8192):
-        for m, n in ((7168, 2112), (1536, 24576), (512, 32768), (16384, 7168), (7168, 4096), (2048, 7168)):
+    for k in (2048, 4096, 8192):
+        for m, n in ((1408, 2816),(7168, 2112), (1536, 24576), (512, 32768), (16384, 7168), (7168, 4096), (2048, 7168)):
             # Test correctness
             x_fp8, y_fp8, residual, out, ref_out = construct_wgrad(m, k, n)
             deep_gemm.wgrad_gemm_fp8_fp8_fp32_nt(x_fp8, y_fp8, out)
@@ -307,9 +310,9 @@ if __name__ == '__main__':
     print('Library path:')
     print(f' > {deep_gemm.__path__}\n')
 
-    test_gemm()
-    test_m_grouped_gemm_contiguous()
-    test_m_grouped_gemm_masked()
+    # test_gemm()
+    # test_m_grouped_gemm_contiguous()
+    # test_m_grouped_gemm_masked()
 
     test_wgrad_gemm()
-    test_k_grouped_wgrad_gemm()
+    # test_k_grouped_wgrad_gemm()

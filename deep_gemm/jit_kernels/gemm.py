@@ -188,7 +188,10 @@ def gemm_fp8_fp8_bf16_nt(lhs: Tuple[torch.Tensor, torch.Tensor],
 
     # LHS scales must be transposed for TMA loads, but not for RHS scales
     # NOTES: `get_col_major_tma_aligned_tensor` may launch a kernel if not processed by previous kernels
-    lhs_scales = get_col_major_tma_aligned_tensor(lhs_scales)
+    lhs_scales_aligned = get_col_major_tma_aligned_tensor(lhs_scales)
+    print(f"gemm_fp8_fp8_bf16_nt:{id(lhs_scales), id(lhs_scales_aligned)}")
+
+
     assert rhs_scales.is_contiguous()
 
     # Do nothing if `m` is zero
@@ -208,7 +211,7 @@ def gemm_fp8_fp8_bf16_nt(lhs: Tuple[torch.Tensor, torch.Tensor],
     tensor_map_a = make_2d_tma_a_desc(GemmType.Normal, lhs, m, k, lhs.stride(0), block_m, block_k, 1)
     tensor_map_b = make_2d_tma_b_desc(GemmType.Normal, rhs, n, k, rhs.stride(0), block_n, block_k, 1)
     tensor_map_d = make_2d_tma_d_desc(GemmType.Normal, out, m, n, out.stride(0), block_m, block_n, 1, smem_config[1])
-    tensor_map_scales_a = make_2d_tma_scales_desc(GemmType.Normal, lhs_scales, m, k, block_m, block_k, 1)
+    tensor_map_scales_a = make_2d_tma_scales_desc(GemmType.Normal, lhs_scales_aligned, m, k, block_m, block_k, 1)
 
     kwargs = {
         # Templated arguments
