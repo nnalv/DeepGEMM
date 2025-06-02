@@ -101,12 +101,9 @@ def construct_wgrad(m: int, k: int, n: int) -> \
         Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
     x = torch.randn((m, k), device='cuda', dtype=torch.bfloat16)
     y = torch.randn((n, k), device='cuda', dtype=torch.bfloat16)
-    # residual = torch.randn((m, n), device='cuda', dtype=torch.float) * 10
-    residual = None
-    # out = residual.clone()
-    out = torch.zeros((m,n), device='cuda', dtype=torch.float)
-    # ref_out = residual + (x.float() @ y.float().t())
-    ref_out = x.float() @ y.float().t()
+    residual = torch.randn((m, n), device='cuda', dtype=torch.float) * 10
+    out = residual.clone()
+    ref_out = residual + (x.float() @ y.float().t())
 
     x_fp8 = per_token_cast_to_fp8(x)
     y_fp8 = per_token_cast_to_fp8(y)
@@ -171,6 +168,12 @@ def test_gemm() -> None:
             x_fp8, y_fp8, out, ref_out = construct(m, k, n)
             deep_gemm.gemm_fp8_fp8_bf16_nt(x_fp8, y_fp8, out)
             diff = calc_diff(out, ref_out)
+
+            # diff_exact_num = (out != ref_out).sum()
+            # diff_num = ((out - ref_out).abs() > 1e-3).sum()
+            # diff_max = (out - ref_out).abs().max()
+            # re = torch.allclose(out.float().cpu(), ref_out.float().cpu(), rtol=1e-3, atol=1e-3)
+            # print(f"diff:{diff}, exact_diff:{diff_exact_num}-{diff_num}-{diff_max}-{re}")
             assert diff < 0.001, f'{m=}, {k=}, {n=}, {diff:.5f}'
 
             # Construct new tensors only once to avoid L2 cache acceleration (creating them puts them in L2)
@@ -310,9 +313,9 @@ if __name__ == '__main__':
     print('Library path:')
     print(f' > {deep_gemm.__path__}\n')
 
-    # test_gemm()
+    test_gemm()
     # test_m_grouped_gemm_contiguous()
     # test_m_grouped_gemm_masked()
 
-    test_wgrad_gemm()
+    # test_wgrad_gemm()
     # test_k_grouped_wgrad_gemm()

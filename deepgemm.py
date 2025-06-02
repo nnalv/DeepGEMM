@@ -12,23 +12,38 @@ def per_token_cast_to_fp8(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     x_view = x.view(m, -1, 128)
     x_amax = x_view.abs().float().amax(dim=2).view(m, -1).clamp(1e-4)
     fp8_data = (x_view * (448.0 / x_amax.unsqueeze(2))).to(torch.float8_e4m3fn)
-
     return fp8_data.view(m, n + pad_size)[:, :n], (x_amax / 448.0).view(m, -1)
 
 def per_block_cast_to_fp8(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     assert x.dim() == 2
     m, n = x.shape
-    x_padded = torch.zeros((ceil_div(m, 128) * 128, ceil_div(n, 128) * 128), dtype=x.dtype, device=x.device)
-    x_padded[:m, :n] = x
-    x_view = x_padded.view(-1, 128, x_padded.size(1) // 128, 128)
+    # x_padded = torch.zeros((ceil_div(m, 128) * 128, ceil_div(n, 128) * 128), dtype=x.dtype, device=x.device)
+    # x_padded[:m, :n] = x
+    target_m = ceil_div(m, 128) * 128  
+    target_n = ceil_div(n, 128) * 128  
+    pad_m = target_m - m  
+    pad_n = target_n - n  
+    x = torch.nn.functional.pad(x, (0, pad_n, 0, pad_m), value=0) if pad_m > 0 or pad_n > 0 else x
+    x_view = x.view(-1, 128, x.size(1) // 128, 128)
     x_amax = x_view.abs().float().amax(dim=(1, 3), keepdim=True).clamp(1e-4)
     x_scaled = (x_view * (448.0 / x_amax)).to(torch.float8_e4m3fn)
-    return x_scaled.view_as(x_padded)[:m, :n].contiguous(), (x_amax / 448.0).view(x_view.size(0), x_view.size(2))
+    return x_scaled.view_as(x)[:m, :n].contiguous(), (x_amax / 448.0).view(x_view.size(0), x_view.size(2))
 
 def gemm(x_fp8, y_fp8):
     (m, k) = x_fp8[0].shape
     (n, k) = y_fp8[0].shape
-    out = torch.empty((m, n), device=x_fp8[0].device, dtype=torch.bfloat16)
+    out = torch.empty((m, n), device=x_fp8[0].device, dtype=torch.bfloat16, requires_grad=True)
+    deep_gemm.gemm_fp8_fp8_bf16_nt(x_fp8, y_fp8, out)
+    return out
+
+def gemm_bf16(x, y):
+    (m, k) = x.shape
+    (n, k) = y.shape
+    x_fp8 = per_token_cast_to_fp8(x)
+    y_fp8 = per_block_cast_to_fp8(y)
+    out = torch.empty((m, n), device=x.device, dtype=torch.bfloat16)
+    print(x_fp8[0].shape, x_fp8[1].shape, y_fp8[0].shape, y_fp8[1].shape, out.shape)
+
     deep_gemm.gemm_fp8_fp8_bf16_nt(x_fp8, y_fp8, out)
     return out
 
@@ -36,6 +51,6 @@ def gemm(x_fp8, y_fp8):
 def wgrad_gemm(x_fp8, y_fp8):
     (m, k) = x_fp8[0].shape
     (n, k) = y_fp8[0].shape
-    out = torch.empty((m, n), device=x_fp8[0].device, dtype=torch.float)
+    out = torch.empty((m, n), device=x_fp8[0].device, dtype=torch.float, requires_grad=True)
     deep_gemm.wgrad_gemm_fp8_fp8_fp32_nt(x_fp8, y_fp8, out)
     return out

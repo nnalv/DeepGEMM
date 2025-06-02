@@ -189,7 +189,7 @@ def gemm_fp8_fp8_bf16_nt(lhs: Tuple[torch.Tensor, torch.Tensor],
     # LHS scales must be transposed for TMA loads, but not for RHS scales
     # NOTES: `get_col_major_tma_aligned_tensor` may launch a kernel if not processed by previous kernels
     lhs_scales_aligned = get_col_major_tma_aligned_tensor(lhs_scales)
-    print(f"gemm_fp8_fp8_bf16_nt:{id(lhs_scales), id(lhs_scales_aligned)}")
+    # print(f"gemm_fp8_fp8_bf16_nt:{id(lhs_scales), id(lhs_scales_aligned)}")
 
 
     assert rhs_scales.is_contiguous()

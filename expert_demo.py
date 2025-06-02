@@ -10,23 +10,38 @@ from functools import partial
 from typing import Optional, Tuple
 import deepgemm
 
+fp8_cache={}
+
 class DeepGEMM(Function):
     @staticmethod
-    def forward(ctx, input, weight):
-        input, input_scale = input
-        weight, weight_scale = weight
-        ctx.save_for_backward(input, input_scale, weight, weight_scale)
-        output = deepgemm.gemm((input, input_scale), (weight, weight_scale))
+    def forward(ctx, input, weight, input_fp8, input_scale, weight_fp8, weight_scale):
+        print(f"forward called")
+        ctx.save_for_backward(input, weight_fp8, weight_scale)
+        output = deepgemm.gemm((input_fp8, input_scale), (weight_fp8, weight_scale))
+
+        # ctx.save_for_backward(input, weight)
+        # output = input @ weight.T
+        # print(output)
         return output
+    
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, input_scale, weight, weight_scale = ctx.saved_tensors
+        print(f"backward called")
+        input, weight_fp8, weight_scale = ctx.saved_tensors
+
         (grad_fp8, grad_scale) = deepgemm.per_token_cast_to_fp8(grad_output)
-        grad_input = deepgemm.gemm((grad_fp8, grad_scale), (weight.T.contiguous(), weight_scale.T.contiguous()))
-        # grad_weight = deepgemm.wgrad_gemm((input.T.contiguous(), input_scale.T.contiguous()), (grad_fp8, grad_scale))
-        grad_weight = deepgemm.wgrad_gemm((grad_fp8.T.contiguous(), grad_scale.T.contiguous()), (input.T.contiguous(), input_scale.T.contiguous()))
-        return grad_input, grad_weight
+        grad_input = deepgemm.gemm((grad_fp8, grad_scale), (weight_fp8.T.contiguous(), weight_scale.T.contiguous()))
+
+        grad_t_fp8, grad_t_scale = deepgemm.per_token_cast_to_fp8(grad_output.T.contiguous())
+        input_t_fp8, input_t_scale = deepgemm.per_token_cast_to_fp8(input.T.contiguous())
+        grad_weight = deepgemm.wgrad_gemm((grad_t_fp8, grad_t_scale), (input_t_fp8, input_t_scale))
+
+        # input, weight = ctx.saved_tensors
+        # grad_input = grad_output @ weight
+        # grad_weight = grad_output.T @ input
+        # return grad_input, grad_weight
+        return grad_input, grad_weight, None ,None, None, None
 
 
 class WeDeepseekV3MLP(nn.Module):
@@ -36,31 +51,36 @@ class WeDeepseekV3MLP(nn.Module):
         self.hidden_size = config.hidden_size if hidden_size is None else hidden_size
         self.intermediate_size = config.intermediate_size if intermediate_size is None else intermediate_size
 
-        self.gate_weight = None
-        self.gate_scale = None
-        self.up_weight = None
-        self.up_scale = None
-        self.down_weight = None
-        self.down_scale = None
-
+        self.gate_weight = nn.Parameter(torch.empty(self.intermediate_size, self.hidden_size, dtype=torch.bfloat16))
+        self.up_weight = nn.Parameter(torch.empty(self.intermediate_size, self.hidden_size, dtype=torch.bfloat16))
+        self.down_weight = nn.Parameter(torch.empty(self.hidden_size, self.intermediate_size, dtype=torch.bfloat16))
+        
         self.act_fn = ACT2FN[config.hidden_act]
         
     def forward(self, x):
         (x_fp8, x_scale) = deepgemm.per_token_cast_to_fp8(x)
-        print(f"before GEMM")
-        gate_output = DeepGEMM.apply((x_fp8, x_scale), (self.gate_weight, self.gate_scale))
-        print(f"finish gate GEMM")
-        up_output = DeepGEMM.apply((x_fp8, x_scale), (self.up_weight, self.up_scale))
-        print(f"finish up GEMM")
+
+        self.gate_weight_fp8, self.gate_scale = deepgemm.per_block_cast_to_fp8(self.gate_weight.data)
+        gate_output = DeepGEMM.apply(x, self.gate_weight, x_fp8, x_scale, self.gate_weight_fp8, self.gate_scale)
+       
+        self.up_weight_fp8, self.up_scale = deepgemm.per_block_cast_to_fp8(self.up_weight.data)
+        up_output = DeepGEMM.apply(x, self.up_weight, x_fp8, x_scale, self.up_weight_fp8, self.up_scale)
+
         activated_output = self.act_fn(gate_output)
-        print(f"finish activate")
         activated_up_output = activated_output * up_output
-        print(f"finish elementwise activation")
+
         (activated_up_output_fp8, activated_up_output_scale) = deepgemm.per_token_cast_to_fp8(activated_up_output)
-        print(f"finish quant activation output")
-        down_proj = DeepGEMM.apply((activated_up_output_fp8, activated_up_output_scale), (self.down_weight, self.down_scale))
-        print(f"finish down GEMM")
+        self.down_weight_fp8, self.down_scale = deepgemm.per_block_cast_to_fp8(self.down_weight.data)
+
+        down_proj = DeepGEMM.apply(activated_up_output, self.down_weight, activated_up_output_fp8, activated_up_output_scale, self.down_weight_fp8, self.down_scale)
+
+        # gate_output = DeepGEMM.apply(x, self.gate_weight)
+        # up_output = DeepGEMM.apply(x, self.up_weight)
+        # activated_output = self.act_fn(gate_output)
+        # activated_up_output = activated_output * up_output
+        # down_proj = DeepGEMM.apply(activated_up_output, self.down_weight)
         # down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+
         return down_proj
 
 
@@ -77,7 +97,9 @@ class DeepseekV3MLP(nn.Module):
         self.act_fn = ACT2FN[config.hidden_act]
 
     def forward(self, x):
+        # print(f"before gemm : x:{x}, w:{self.gate_proj.weight}")
         gate_output = self.gate_proj(x)
+        # print(f"after gemm : x:{x}, w:{self.gate_proj.weight}")
         # if not self.config.is_print:
         #     print(f"DeepseekV3MLP-gate_output:{gate_output}")
         #     is_print=True
@@ -185,7 +207,7 @@ class DeepseekV3MoE(nn.Module):
         topk_indices, topk_weights = self.gate(hidden_states)
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
         hidden_states = self.moe(hidden_states, topk_indices, topk_weights).view(*orig_shape)
-        hidden_states = hidden_states + self.shared_experts(residuals)
+        hidden_states = hidden_states + self.shared_experts(residuals) #residuals.shape: [128, 512, 2048]
         return hidden_states
 
 class DeepseekV3RMSNorm(nn.Module):
@@ -299,9 +321,9 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
     # Define backward hooks for capturing gradients
     def print_backward_hook(module, grad_input, grad_output, layer_idx=0, mode=None, name=None):
         if mode.startswith("hf-"):
-            hf_grads[layer_idx][name] = grad_output[0].detach().clone()
+            hf_grads[layer_idx][name] = grad_output[0].clone().detach()
         elif mode.startswith("we-"):
-            we_grads[layer_idx][name] = grad_output[0].detach().clone()
+            we_grads[layer_idx][name] = grad_output[0].clone().detach()
         return None
 
     # Register hooks for HuggingFace model
@@ -336,7 +358,7 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
 
     # Create test data
     batch_size = 128
-    seq_len = 128
+    seq_len = 512
     hidden_size = hf_model.config.hidden_size if hf_model else we_model.config.hidden_size
     test_input = torch.randn(batch_size, seq_len, hidden_size, requires_grad=True, dtype=torch.bfloat16)
     test_input_hf = test_input.clone().detach().requires_grad_(True)
@@ -345,9 +367,9 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
     # Register backward hooks on inputs
     def input_backward_hook(grad, layer_idx=0, mode=None):
         if mode == "hf":
-            hf_grads[layer_idx]["input_grad"] = grad.detach().clone()
+            hf_grads[layer_idx]["input_grad"] = grad.clone().detach()
         elif mode == "we":
-            we_grads[layer_idx]["input_grad"] = grad.detach().clone()
+            we_grads[layer_idx]["input_grad"] = grad.clone().detach()
         return grad
     
     test_input_hf.register_hook(lambda grad: input_backward_hook(grad, layer_idx=0, mode="hf"))
@@ -356,15 +378,16 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
     # Run forward and backward passes
     if hf_model:
         hf_model.cuda()
+        hf_model.train()
         test_input_hf = test_input_hf.cuda()
         hf_output = hf_model(test_input_hf)
         
         # Register backward hooks on outputs
         def output_backward_hook(grad, layer_idx=0, mode=None):
             if mode == "hf":
-                hf_grads[layer_idx]["output_grad"] = grad.detach().clone()
+                hf_grads[layer_idx]["output_grad"] = grad.clone().detach()
             elif mode == "we":
-                we_grads[layer_idx]["output_grad"] = grad.detach().clone()
+                we_grads[layer_idx]["output_grad"] = grad.clone().detach()
             return grad
         
         hf_output.register_hook(lambda grad: output_backward_hook(grad, layer_idx=0, mode="hf"))
@@ -374,14 +397,19 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
         hf_loss.backward()
         hf_model.cpu()
 
+
     if we_model:
         we_model.cuda()
+        we_model.train()
         test_input_we = test_input_we.cuda()
+        # we_model_trace = torch.jit.trace(we_model, test_input_we)
+        # print(we_model_trace.graph)
+
         we_output = we_model(test_input_we)
         
         # Register backward hooks on outputs
-        we_output.register_hook(lambda grad: output_backward_hook(grad, layer_idx=0, mode="we"))
-        
+        we_output.register_hook(lambda grad: output_backward_hook(grad, layer_idx=0, mode="we"))        
+
         # Backward pass
         we_loss = we_output.sum()
         we_loss.backward()
@@ -400,9 +428,11 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
 
             re = torch.allclose(wev.float().cpu(), hfv.float().cpu(), rtol=rtol, atol=atol)
             re_p = '\033[32mTrue\033[0m' if re else '\033[31mFalse\033[0m'
+            
+            diff_dg=calc_diff(wev, hfv)
             print(
                 f"layer:{idx}, {k}, diff: {same_num}, diff>{epsilon}:[{diff_num}/{hfv.numel()}] "
-                f"diff_max:{diff_max}, allclose: {re_p}"
+                f"diff_max:{diff_max}, allclose: {re_p}, deep_gemm_diff:{diff_dg}"
             )
 
     # Compare final outputs
@@ -416,9 +446,11 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
 
         re = torch.allclose(we_output.float(), hf_output.float(), rtol=rtol, atol=atol)
         re_p = '\033[32mTrue\033[0m' if re else '\033[31mFalse\033[0m'
+
+        diff_dg=calc_diff(wev, hfv)
         print(
             f"final output, diff: {same_num}, diff>{epsilon}:[{diff_num}/{hf_output.numel()}] "
-            f"diff_max:{diff_max}, allclose: {re_p}"
+            f"diff_max:{diff_max}, allclose: {re_p}, deep_gemm_diff:{diff_dg}"
         )
     
     # Compare backward gradients
@@ -434,13 +466,20 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
 
                 re = torch.allclose(wev.float(), hfv.float(), rtol=rtol, atol=atol)
                 re_p = '\033[32mTrue\033[0m' if re else '\033[31mFalse\033[0m'
+
+                diff_dg=calc_diff(wev, hfv)
                 print(
                     f"layer:{idx}, {k}, diff: {same_num}, diff>{epsilon}:[{diff_num}/{hfv.numel()}] "
-                    f"diff_max:{diff_max}, allclose: {re_p}"
+                    f"diff_max:{diff_max}, allclose: {re_p}, deep_gemm_diff:{diff_dg}"
                 )
 
     return hf_hiddens, we_hiddens
 
+def calc_diff(x, y):
+    x, y = x.double(), y.double()
+    denominator = (x * x + y * y).sum()
+    sim = 2 * (x * y).sum() / denominator
+    return 1 - sim
 
 def compare_hf_mg_moe_models(hf_model_path, layer_idx=1):
     """
@@ -457,32 +496,19 @@ def compare_hf_mg_moe_models(hf_model_path, layer_idx=1):
     # 创建我们的模型实例
     hf_layer = DeepseekV3MoE(hf_config)  # baseline
     we_layer = DeepseekV3MoE(hf_config, we_mlp=True)  # we model
+    hf_layer.train()
+    we_layer.train()
     
-    # for name, p in we_layer.named_parameters():
-    #     print(f"we_layer: {name}, shape:{p.size()}")
+    for name, p in we_layer.named_parameters():
+        print(f"we_layer: {name}, shape:{p.size()}")
 
     # for name, p in hf_layer.named_parameters():
     #     print(f"hf_layer: {name}, shape:{p.size()}")
 
     # 确保权重初始化相同
-    for we_expert, hf_expert in zip(we_layer.experts, hf_layer.experts):
-        gate_weight, gate_scale = deepgemm.per_block_cast_to_fp8(hf_expert.gate_proj.weight.data)
-        we_expert.gate_weight= nn.Parameter(gate_weight)
-        we_expert.gate_scale= nn.Parameter(gate_scale)
-        up_weight, up_scale = deepgemm.per_block_cast_to_fp8(hf_expert.up_proj.weight.data)
-        we_expert.up_weight= nn.Parameter(up_weight)
-        we_expert.up_scale= nn.Parameter(up_scale)
-        down_weight, down_scale = deepgemm.per_block_cast_to_fp8(hf_expert.down_proj.weight.data)
-        we_expert.down_weight= nn.Parameter(down_weight)
-        we_expert.down_scale= nn.Parameter(down_scale)
-       
-
-    for param_we, param_hf in zip(we_layer.gate.parameters(), hf_layer.gate.parameters()):
-        param_we.data.copy_(param_hf.data)
-
-    for param_we, param_hf in zip(we_layer.shared_experts.parameters(), hf_layer.shared_experts.parameters()):
-        param_we.data.copy_(param_hf.data)
-            
+    for param_we, param_hf in zip(we_layer.parameters(), hf_layer.parameters()):
+        if param_we is not None:
+            param_we.data.copy_(param_hf.data)        
 
     # 比较两个模型
     hf_hiddens, we_hiddens = compare_moe_layers(hf_layer, we_layer)
