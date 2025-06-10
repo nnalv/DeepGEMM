@@ -1,6 +1,6 @@
 import torch
 import deep_gemm
-from typing import Tuple
+from typing import List, Tuple
 from deep_gemm import ceil_div
 
 
@@ -54,3 +54,17 @@ def wgrad_gemm(x_fp8, y_fp8):
     out = torch.empty((m, n), device=x_fp8[0].device, dtype=torch.float, requires_grad=True)
     deep_gemm.wgrad_gemm_fp8_fp8_fp32_nt(x_fp8, y_fp8, out)
     return out
+    
+
+def group_gemm(x_fp8_group, y_fp8_group, m_indices):
+    m, k = x_fp8_group[0].shape
+    n, k = y_fp8_group[0][0].shape
+    out = torch.empty((m, n), device=x_group.device, dtype=torch.bfloat16)
+    deep_gemm.m_grouped_gemm_fp8_fp8_bf16_nt_contiguous(x_fp8, y_fp8, out, m_indices)
+    return out
+
+
+def grouped_wgrad_gemm(x_fp8_group, y_fp8_group, m, n, k_sizes):
+    out = torch.zeros((num_groups, m, n), device='cuda', dtype=torch.float)
+    deep_gemm.k_grouped_wgrad_gemm_fp8_fp8_fp32_nt(x_fp8_group, y_fp8_group, out, k_sizes)
+            
