@@ -29,6 +29,28 @@ def per_block_cast_to_fp8(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     x_scaled = (x_view * (448.0 / x_amax)).to(torch.float8_e4m3fn)
     return x_scaled.view_as(x)[:m, :n].contiguous(), (x_amax / 448.0).view(x_view.size(0), x_view.size(2))
 
+
+def restore_per_block_fp8(fp8_data: torch.Tensor, scaling_factors: torch.Tensor) -> torch.Tensor:
+    m, n = fp8_data.shape
+
+    padded_m = ceil_div(m, 128) * 128
+    padded_n = ceil_div(n, 128) * 128
+    pad_m = padded_m - m
+    pad_n = padded_n - n
+    fp8_padded = torch.nn.functional.pad(fp8_data, (0, pad_n, 0, pad_m), value=0) if pad_m > 0 or pad_n > 0 else fp8_data
+    
+    fp8_float = fp8_padded.view(-1, 128, padded_n // 128, 128).to(torch.float32) 
+
+    scaling_factors = scaling_factors.view(-1, 1, padded_n // 128, 1)  
+    restored_data = fp8_float * scaling_factors
+
+    restored_data = restored_data.view(padded_m, padded_n)
+    restored_data = restored_data[:m, :n]
+    restored_data_bf16 = restored_data.to(torch.bfloat16)
+
+    return restored_data_bf16
+
+
 def gemm(x_fp8, y_fp8):
     (m, k) = x_fp8[0].shape
     (n, k) = y_fp8[0].shape

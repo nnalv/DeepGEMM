@@ -10,6 +10,7 @@ from functools import partial
 from typing import Optional, Tuple
 import deepgemm
 from deep_gemm import ceil_div
+from load_weight_5l import load_moe_weight
 
 
 class DeepGEMM(Function):
@@ -150,10 +151,9 @@ class WeDeepseekV3MoE(nn.Module):
     A mixed expert module containing shared experts.
     """
 
-    def __init__(self, config, we_mlp=False):
+    def __init__(self, config):
         super().__init__()
         self.config = config
-        self.we_mlp = we_mlp
         self.experts = nn.ModuleList(
             [   
                 WeDeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(config.n_routed_experts)
@@ -161,40 +161,61 @@ class WeDeepseekV3MoE(nn.Module):
         )
         self.gate = DeepseekV3TopkRouter(config)
         self.shared_experts = DeepseekV3MLP(config=config, intermediate_size=config.moe_intermediate_size * config.n_shared_experts)
-        self.act_fn = ACT2FN[config.hidden_act]
+        self.act_fn = ACT2FN[config.hidden_act]        
+
     
     def group_forward(self, num_groups, m_indices, expert_input_list, experts):
-        group_expert_inputs = torch.cat(expert_input_list, dim=0)
+        
+        group_expert_inputs = torch.cat(expert_input_list+expert_input_list, dim=0) if self.config.fused_gate_up else torch.cat(expert_input_list, dim=0)
         group_expert_inputs_fp8, group_expert_inputs_scale = deepgemm.per_token_cast_to_fp8(group_expert_inputs)
         
         hidden_size = self.config.hidden_size
         intermediate_size = self.config.moe_intermediate_size
 
-        group_gate_weights = torch.empty((num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.bfloat16)
-        group_gate_weights_fp8 = (torch.empty_like(group_gate_weights, device='cuda', dtype=torch.float8_e4m3fn), torch.empty((num_groups, ceil_div(intermediate_size, 128), hidden_size // 128), device='cuda', dtype=torch.float))
+        if self.config.fused_gate_up:
+            group_gate_up_weights = torch.empty((2*num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.bfloat16)
+            group_gate_up_weights_fp8 = (torch.empty((2*num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.float8_e4m3fn), torch.empty((2*num_groups, ceil_div(intermediate_size, 128), hidden_size // 128), device='cuda', dtype=torch.float))
+        else:
+            group_gate_weights = torch.empty((num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.bfloat16)
+            group_gate_weights_fp8 = (torch.empty_like(group_gate_weights, device='cuda', dtype=torch.float8_e4m3fn), torch.empty((num_groups, ceil_div(intermediate_size, 128), hidden_size // 128), device='cuda', dtype=torch.float))
 
-        group_up_weights = torch.empty((num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.bfloat16)
-        group_up_weights_fp8 = (torch.empty_like(group_up_weights, device='cuda', dtype=torch.float8_e4m3fn), torch.empty((num_groups, ceil_div(intermediate_size, 128), hidden_size // 128), device='cuda', dtype=torch.float))
-
+            group_up_weights = torch.empty((num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.bfloat16)
+            group_up_weights_fp8 = (torch.empty_like(group_up_weights, device='cuda', dtype=torch.float8_e4m3fn), torch.empty((num_groups, ceil_div(intermediate_size, 128), hidden_size // 128), device='cuda', dtype=torch.float))
+        
         group_down_weights = torch.empty((num_groups, hidden_size, intermediate_size), device='cuda', dtype=torch.bfloat16)
         group_down_weights_fp8 = (torch.empty_like(group_down_weights, device='cuda', dtype=torch.float8_e4m3fn), torch.empty((num_groups, ceil_div(hidden_size, 128), intermediate_size // 128), device='cuda', dtype=torch.float))
 
         for i, expert in enumerate(experts):
-            group_gate_weights[i].copy_(expert.gate_weight.data)
-            group_gate_weights_fp8[0][i], group_gate_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.gate_weight.data)
+            if self.config.fused_gate_up:
+                group_gate_up_weights[i].copy_(expert.gate_weight.data)
+                group_gate_up_weights_fp8[0][i], group_gate_up_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.gate_weight.data)
+                group_gate_up_weights[i+num_groups].copy_(expert.up_weight.data)
+                group_gate_up_weights_fp8[0][num_groups+i], group_gate_up_weights_fp8[1][num_groups+i] = deepgemm.per_block_cast_to_fp8(expert.up_weight.data)
+            else:
+                group_gate_weights[i].copy_(expert.gate_weight.data)
+                group_gate_weights_fp8[0][i], group_gate_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.gate_weight.data)
 
-            group_up_weights[i].copy_(expert.up_weight.data)
-            group_up_weights_fp8[0][i], group_up_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.up_weight.data)
+                group_up_weights[i].copy_(expert.up_weight.data)
+                group_up_weights_fp8[0][i], group_up_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.up_weight.data)
 
             group_down_weights[i].copy_(expert.down_weight.data)
             group_down_weights_fp8[0][i], group_down_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.down_weight.data)
 
-         # 1. gate
-        gate_output = GroupDeepGEMM.apply(group_expert_inputs, group_gate_weights, group_expert_inputs_fp8, group_expert_inputs_scale, group_gate_weights_fp8[0], group_gate_weights_fp8[1], m_indices)
+        if self.config.fused_gate_up:
+            # gate&up fused
+            m_indices_fused = torch.cat([m_indices, m_indices + num_groups], dim=0)
+            gate_up_output = GroupDeepGEMM.apply(group_expert_inputs, group_gate_up_weights, group_expert_inputs_fp8, group_expert_inputs_scale, group_gate_up_weights_fp8[0], group_gate_up_weights_fp8[1], m_indices_fused)
+            
+            m_size = m_indices.shape[0]
+            gate_output = gate_up_output[:m_size, :]
+            up_output = gate_up_output[m_size:, :]
+        else:
+            # 1. gate
+            gate_output = GroupDeepGEMM.apply(group_expert_inputs, group_gate_weights, group_expert_inputs_fp8, group_expert_inputs_scale, group_gate_weights_fp8[0], group_gate_weights_fp8[1], m_indices)
 
-        # 2. up
-        up_output = GroupDeepGEMM.apply(group_expert_inputs, group_up_weights,  group_expert_inputs_fp8, group_expert_inputs_scale, group_up_weights_fp8[0], group_up_weights_fp8[1], m_indices)
-
+            # 2. up
+            up_output = GroupDeepGEMM.apply(group_expert_inputs, group_up_weights,  group_expert_inputs_fp8, group_expert_inputs_scale, group_up_weights_fp8[0], group_up_weights_fp8[1], m_indices)
+        
         # 3. activation
         activated_output = self.act_fn(gate_output)
         activated_up_output = activated_output * up_output
@@ -281,15 +302,8 @@ class DeepseekV3MLP(nn.Module):
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False, dtype=torch.bfloat16)
         self.act_fn = ACT2FN[config.hidden_act]
 
-    def forward(self, x):
-        # print(f"before gemm : x:{x}, w:{self.gate_proj.weight}")
-        gate_output = self.gate_proj(x)
-        # print(f"after gemm : x:{x}, w:{self.gate_proj.weight}")
-        # if not self.config.is_print:
-        #     print(f"DeepseekV3MLP-gate_output:{gate_output}")
-        #     is_print=True
-    
-        down_proj = self.down_proj(self.act_fn(gate_output) * self.up_proj(x))
+    def forward(self, x):    
+        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
         return down_proj
 
 
@@ -345,14 +359,12 @@ class DeepseekV3MoE(nn.Module):
     A mixed expert module containing shared experts.
     """
 
-    def __init__(self, config, we_mlp=False):
+    def __init__(self, config):
         super().__init__()
         self.config = config
-        self.we_mlp = we_mlp
         self.experts = nn.ModuleList(
             [   
-                WeDeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size) if we_mlp else DeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size) 
-                for _ in range(config.n_routed_experts)
+                DeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(config.n_routed_experts)
             ]
         )
         self.gate = DeepseekV3TopkRouter(config)
@@ -372,7 +384,6 @@ class DeepseekV3MoE(nn.Module):
             expert = self.experts[expert_idx]
             mask = expert_mask[expert_idx]
             token_indices, weight_indices = torch.where(mask)
-            # print(f"expert_mask:{expert_mask.shape}, token_indices:{token_indices.numel()}, weight_indices:{weight_indices.numel()}") 
 
             if token_indices.numel() > 0:
                 expert_weights = topk_weights[token_indices, weight_indices]
@@ -678,10 +689,11 @@ def compare_hf_mg_moe_models(hf_model_path, layer_idx=1):
     # 加载HuggingFace模型配置
     hf_config = AutoConfig.from_pretrained(hf_model_path, trust_remote_code=True)
     setattr(hf_config, "is_print", False)
+    setattr(hf_config, "fused_gate_up", True)
     
     # 创建我们的模型实例
     hf_layer = DeepseekV3MoE(hf_config)  # baseline
-    we_layer = WeDeepseekV3MoE(hf_config, we_mlp=True)  # we model
+    we_layer = WeDeepseekV3MoE(hf_config)  # we model
     hf_layer.train()
     we_layer.train()
     
@@ -695,6 +707,8 @@ def compare_hf_mg_moe_models(hf_model_path, layer_idx=1):
     for param_we, param_hf in zip(we_layer.parameters(), hf_layer.parameters()):
         if param_we is not None:
             param_we.data.copy_(param_hf.data)        
+
+    load_moe_weight(we_layer, hf_layer)
 
     # 比较两个模型
     hf_hiddens, we_hiddens = compare_moe_layers(hf_layer, we_layer)
@@ -718,5 +732,8 @@ def convert_hf_model_to_te():
 """
 if __name__ == "__main__":
     torch.cuda.empty_cache()
+
     local_path = "/data/shared/models/huggingface.co/moonshotai/Moonlight-16B-A3B/"
     hf_hiddens, we_hiddens = compare_hf_mg_moe_models(local_path, layer_idx=1)
+
+
