@@ -1,5 +1,5 @@
 import os
-import sys
+import sys, time
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -88,9 +88,17 @@ class WeDeepseekV3MLP(nn.Module):
 class GroupDeepGEMM(Function):
     @staticmethod
     def forward(ctx, group_input, group_weight, group_input_fp8, group_input_scale, group_weight_fp8, group_weight_scale, m_indices):
-        print(f"GroupDeepGEMM#forward called")
         ctx.save_for_backward(group_input, group_weight_fp8, group_weight_scale, m_indices)
+
+        start_time = time.perf_counter()
+
         output = deepgemm.group_gemm((group_input_fp8, group_input_scale), (group_weight_fp8, group_weight_scale), m_indices)
+
+        end_time = time.perf_counter()
+        t = end_time - start_time
+        m, k = group_input.shape
+        n, k = group_weight[0].shape
+        print(f"GroupDeepGEMM#forward called, throughput:{2 * m * n * k / t / 1e12:4.0f} TFLOPS")
 
         # ctx.save_for_backward(input, weight)
         # output = input @ weight.T
@@ -99,13 +107,23 @@ class GroupDeepGEMM(Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        print(f"GroupDeepGEMM#backward called")
+        start_time = time.perf_counter()
+
         group_input, group_weight_fp8, group_weight_scale, m_indices = ctx.saved_tensors
 
         (grad_fp8, grad_scale) = deepgemm.per_token_cast_to_fp8(grad_output)
         group_weight_fp8_t = group_weight_fp8.permute(0,2,1).contiguous()
         group_weight_scale_t = group_weight_scale.permute(0,2,1).contiguous()
         grad_input = deepgemm.group_gemm((grad_fp8, grad_scale), (group_weight_fp8_t, group_weight_scale_t), m_indices)
+
+        end_time = time.perf_counter()
+        t = end_time - start_time
+        m, k = grad_output.shape
+        n, k = group_weight_fp8[0].shape
+        print(f"GroupDeepGEMM#backward called, [grad_input] throughput:{2 * m * n * k / t / 1e12:4.0f} TFLOPS")
+
+        
+        start_time = time.perf_counter()
 
         grad_output_t = grad_output.T.contiguous()
         group_input_t = group_input.T.contiguous()
@@ -143,6 +161,12 @@ class GroupDeepGEMM(Function):
         # grad_input = grad_output @ weight
         # grad_weight = grad_output.T @ input
         # return grad_input, grad_weight
+
+        end_time = time.perf_counter()
+        t = end_time - start_time
+        n, k = group_input_t.shape
+        print(f"GroupDeepGEMM#backward called, [grad_weight] throughput:{2 * m * n * k / t / 1e12:4.0f} TFLOPS")
+
         return grad_input, grad_weight, None ,None, None, None, None
 
 
@@ -151,9 +175,10 @@ class WeDeepseekV3MoE(nn.Module):
     A mixed expert module containing shared experts.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, fused_gate_up=False):
         super().__init__()
         self.config = config
+        self.fused_gate_up = fused_gate_up
         self.experts = nn.ModuleList(
             [   
                 WeDeepseekV3MLP(config, intermediate_size=config.moe_intermediate_size) for _ in range(config.n_routed_experts)
@@ -166,13 +191,13 @@ class WeDeepseekV3MoE(nn.Module):
     
     def group_forward(self, num_groups, m_indices, expert_input_list, experts):
         
-        group_expert_inputs = torch.cat(expert_input_list+expert_input_list, dim=0) if self.config.fused_gate_up else torch.cat(expert_input_list, dim=0)
+        group_expert_inputs = torch.cat(expert_input_list+expert_input_list, dim=0) if self.fused_gate_up else torch.cat(expert_input_list, dim=0)
         group_expert_inputs_fp8, group_expert_inputs_scale = deepgemm.per_token_cast_to_fp8(group_expert_inputs)
         
         hidden_size = self.config.hidden_size
         intermediate_size = self.config.moe_intermediate_size
 
-        if self.config.fused_gate_up:
+        if self.fused_gate_up:
             group_gate_up_weights = torch.empty((2*num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.bfloat16)
             group_gate_up_weights_fp8 = (torch.empty((2*num_groups, intermediate_size, hidden_size), device='cuda', dtype=torch.float8_e4m3fn), torch.empty((2*num_groups, ceil_div(intermediate_size, 128), hidden_size // 128), device='cuda', dtype=torch.float))
         else:
@@ -186,7 +211,7 @@ class WeDeepseekV3MoE(nn.Module):
         group_down_weights_fp8 = (torch.empty_like(group_down_weights, device='cuda', dtype=torch.float8_e4m3fn), torch.empty((num_groups, ceil_div(hidden_size, 128), intermediate_size // 128), device='cuda', dtype=torch.float))
 
         for i, expert in enumerate(experts):
-            if self.config.fused_gate_up:
+            if self.fused_gate_up:
                 group_gate_up_weights[i].copy_(expert.gate_weight.data)
                 group_gate_up_weights_fp8[0][i], group_gate_up_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.gate_weight.data)
                 group_gate_up_weights[i+num_groups].copy_(expert.up_weight.data)
@@ -201,7 +226,7 @@ class WeDeepseekV3MoE(nn.Module):
             group_down_weights[i].copy_(expert.down_weight.data)
             group_down_weights_fp8[0][i], group_down_weights_fp8[1][i] = deepgemm.per_block_cast_to_fp8(expert.down_weight.data)
 
-        if self.config.fused_gate_up:
+        if self.fused_gate_up:
             # gate&up fused
             m_indices_fused = torch.cat([m_indices, m_indices + num_groups], dim=0)
             gate_up_output = GroupDeepGEMM.apply(group_expert_inputs, group_gate_up_weights, group_expert_inputs_fp8, group_expert_inputs_scale, group_gate_up_weights_fp8[0], group_gate_up_weights_fp8[1], m_indices_fused)
@@ -490,7 +515,7 @@ class DeepseekV3DecoderLayer(nn.Module):
         return outputs
 
 
-def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
+def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3,  batch_size=32, seq_len=512):
     """Compare MoE layers between HuggingFace and Megatron models"""
     # Storage for intermediate activations
     hf_hiddens = [{} for _ in range(1)]  # Just one layer for simplicity
@@ -554,8 +579,6 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
         )
 
     # Create test data
-    batch_size = 128
-    seq_len = 512
     hidden_size = hf_model.config.hidden_size if hf_model else we_model.config.hidden_size
     test_input = torch.randn(batch_size, seq_len, hidden_size, requires_grad=True, dtype=torch.bfloat16)
     test_input_hf = test_input.clone().detach().requires_grad_(True)
@@ -577,6 +600,7 @@ def compare_moe_layers(hf_model, we_model, rtol=1e-3, atol=1e-3):
         hf_model.cuda()
         hf_model.train()
         test_input_hf = test_input_hf.cuda()
+
         hf_output = hf_model(test_input_hf)
         
         # Register backward hooks on outputs
@@ -678,7 +702,7 @@ def calc_diff(x, y):
     sim = 2 * (x * y).sum() / denominator
     return 1 - sim
 
-def compare_hf_mg_moe_models(hf_model_path, layer_idx=1):
+def compare_hf_mg_moe_models(hf_model_path, layer_idx=1, batch_size=32, seq_len=512, comp_mode=1):
     """
     比较HuggingFace和Megatron模型中的MoE层
     
@@ -689,29 +713,31 @@ def compare_hf_mg_moe_models(hf_model_path, layer_idx=1):
     # 加载HuggingFace模型配置
     hf_config = AutoConfig.from_pretrained(hf_model_path, trust_remote_code=True)
     setattr(hf_config, "is_print", False)
-    setattr(hf_config, "fused_gate_up", True)
     
-    # 创建我们的模型实例
-    hf_layer = DeepseekV3MoE(hf_config)  # baseline
-    we_layer = WeDeepseekV3MoE(hf_config)  # we model
-    hf_layer.train()
-    we_layer.train()
+    if comp_mode == 1:
+        # 创建我们的模型实例
+        hf_layer = DeepseekV3MoE(hf_config)  # baseline
+        we_layer = WeDeepseekV3MoE(hf_config, fused_gate_up=False)  # we model
     
-    # for name, p in we_layer.named_parameters():
-    #     print(f"we_layer: {name}, shape:{p.size()}")
-
-    # for name, p in hf_layer.named_parameters():
-    #     print(f"hf_layer: {name}, shape:{p.size()}")
+        load_moe_weight(hf_layer, False)
+    elif comp_mode == 2:
+        hf_layer = DeepseekV3MoE(hf_config)  
+        we_layer = WeDeepseekV3MoE(hf_config, fused_gate_up=True)  
+    
+        load_moe_weight(hf_layer, False)
+    else:
+        hf_layer = WeDeepseekV3MoE(hf_config, fused_gate_up=False)  
+        we_layer = WeDeepseekV3MoE(hf_config, fused_gate_up=True)  
+    
+        load_moe_weight(hf_layer, True)
 
     # 确保权重初始化相同
     for param_we, param_hf in zip(we_layer.parameters(), hf_layer.parameters()):
         if param_we is not None:
             param_we.data.copy_(param_hf.data)        
 
-    load_moe_weight(we_layer, hf_layer)
-
     # 比较两个模型
-    hf_hiddens, we_hiddens = compare_moe_layers(hf_layer, we_layer)
+    hf_hiddens, we_hiddens = compare_moe_layers(hf_layer, we_layer, batch_size, seq_len)
     
     return hf_hiddens, we_hiddens
 
@@ -734,6 +760,7 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
 
     local_path = "/data/shared/models/huggingface.co/moonshotai/Moonlight-16B-A3B/"
-    hf_hiddens, we_hiddens = compare_hf_mg_moe_models(local_path, layer_idx=1)
+
+    hf_hiddens, we_hiddens = compare_hf_mg_moe_models(local_path, layer_idx=1, batch_size=128, seq_len=2048, comp_mode=3)
 
 
